@@ -8,10 +8,14 @@ const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
 wss.on("connection", (ws) => {
   console.log("🔗 Client connected");
 
-  const dgLive = deepgram.transcription.live({ punctuate: true });
+  const deepgramSocket = deepgram.listen.live({
+    model: "nova",
+    smart_format: true,
+    interim_results: false
+  });
 
-  dgLive.on("transcriptReceived", async (data) => {
-    const transcript = JSON.parse(data).channel.alternatives[0].transcript;
+  deepgramSocket.on("transcriptReceived", async (data) => {
+    const transcript = data.channel.alternatives[0].transcript;
     if (transcript) {
       console.log("🗣️ User:", transcript);
 
@@ -34,11 +38,11 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("message", (msg) => {
-    dgLive.send(msg);
+    deepgramSocket.send(msg);
   });
 
   ws.on("close", () => {
-    dgLive.finish();
+    deepgramSocket.finish();
     console.log("❌ Connection closed");
   });
 });
