@@ -14,6 +14,14 @@ wss.on("connection", (ws) => {
     interim_results: false
   });
 
+  deepgramSocket.on("open", () => {
+    console.log("🔊 Deepgram socket opened");
+  });
+
+  deepgramSocket.on("error", (error) => {
+    console.error("❌ Deepgram error:", error);
+  });
+
   deepgramSocket.on("transcriptReceived", async (data) => {
     const transcript = data.channel.alternatives[0].transcript;
     if (transcript) {
@@ -43,6 +51,6 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     deepgramSocket.finish();
-    console.log("❌ Connection closed");
+    console.log("❌ WebSocket closed");
   });
 });
