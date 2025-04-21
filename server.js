@@ -11,7 +11,7 @@ wss.on("connection", (ws) => {
   const deepgramSocket = deepgram.listen.live({
     model: "nova",
     smart_format: true,
-    interim_results: false
+    interim_results: false,
   });
 
   deepgramSocket.on("open", () => {
@@ -31,11 +31,11 @@ wss.on("connection", (ws) => {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model: "gpt-4",
-          messages: [{ role: "user", content: transcript }]
+          messages: [{ role: "user", content: transcript }],
         }),
       });
 
@@ -51,6 +51,6 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     deepgramSocket.finish();
-    console.log("❌ WebSocket closed");
+    console.log("❌ Connection closed");
   });
 });
