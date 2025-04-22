@@ -1,13 +1,23 @@
 const WebSocket = require("ws");
 const { createClient } = require("@deepgram/sdk");
 const fetch = require("node-fetch");
-const prompts = require("./prompts.json"); // external prompts
+const fs = require("fs");
 
+// Initialize Deepgram
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+
+// Load prompts
+const prompts = JSON.parse(fs.readFileSync("./prompts.json", "utf8"));
+const callerMemory = JSON.parse(fs.readFileSync("./callerMemory.json", "utf8"));
+
+// WebSocket server
 const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
   console.log("🔗 Client connected");
+
+  // Extract caller ID from headers if available
+  const callerId = req.headers["x-caller-id"] || `caller_${Date.now()}`;
 
   const dgStream = deepgram.listen.live({
     model: "nova",
@@ -24,33 +34,47 @@ wss.on("connection", (ws) => {
   });
 
   dgStream.on("transcriptReceived", async (data) => {
-    const transcript = data.channel.alternatives[0].transcript;
-    if (transcript) {
-      console.log("🗣️ User:", transcript);
+    const transcript = data.channel.alternatives[0]?.transcript;
+    if (!transcript) return;
 
-      // 🔁 You can dynamically determine this per client later
-      const client = "dominos"; // Hardcoded for now
-      const systemPrompt = prompts[client] || "You are a helpful assistant.";
+    console.log("🗣️ User:", transcript);
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "gpt-4",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: transcript }
-          ]
-        })
-      });
+    // Load memory for caller
+    const memory = callerMemory[callerId] || [];
 
-      const result = await response.json();
-      const reply = result.choices?.[0]?.message?.content;
-      console.log("🤖 GPT:", reply);
-    }
+    // Append transcript to memory
+    memory.push({ role: "user", content: transcript });
+
+    // Add system prompt
+    const messages = [
+      { role: "system", content: prompts.default || "You are a helpful assistant." },
+      ...memory,
+    ];
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4",
+        messages,
+      }),
+    });
+
+    const result = await response.json();
+    const reply = result.choices?.[0]?.message?.content;
+    if (!reply) return;
+
+    console.log("🤖 GPT:", reply);
+
+    // Save AI reply to memory
+    memory.push({ role: "assistant", content: reply });
+
+    // Save memory back to file
+    callerMemory[callerId] = memory;
+    fs.writeFileSync("./callerMemory.json", JSON.stringify(callerMemory, null, 2));
   });
 
   ws.on("message", (msg) => {
