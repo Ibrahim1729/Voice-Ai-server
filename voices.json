@@ -1,1 +1,4 @@
-{}
+{
+  "default": "s3://voice-cloning-zero-shot/b41d1a8c-2c99-4403-8262-5808bc67c3e0/bentonsaad/manifest.json",
+  "pizzashop": "s3://voice-cloning-zero-shot/another-client-voice-id.json"
+}
