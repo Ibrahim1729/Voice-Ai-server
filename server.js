@@ -40,4 +40,17 @@ wss.on("connection", (ws) => {
       });
 
       const result = await response.json();
-      const reply =
+      const reply = result.choices?.[0]?.message?.content;
+      console.log("🤖 GPT:", reply);
+    }
+  });
+
+  ws.on("message", (msg) => {
+    dgStream.send(msg);
+  });
+
+  ws.on("close", () => {
+    dgStream.finish();
+    console.log("❌ WebSocket closed");
+  });
+});
