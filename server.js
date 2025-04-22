@@ -1,8 +1,8 @@
 const WebSocket = require("ws");
-const { Deepgram } = require("@deepgram/sdk");
+const { createClient } = require("@deepgram/sdk");
 const fetch = require("node-fetch");
 
-const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
 
 wss.on("connection", (ws) => {
