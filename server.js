@@ -1,6 +1,7 @@
 const WebSocket = require("ws");
 const { createClient } = require("@deepgram/sdk");
 const fetch = require("node-fetch");
+const prompts = require("./prompts.json"); // external prompts
 
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
@@ -11,7 +12,7 @@ wss.on("connection", (ws) => {
   const dgStream = deepgram.listen.live({
     model: "nova",
     smart_format: true,
-    interim_results: false
+    interim_results: false,
   });
 
   dgStream.on("open", () => {
@@ -27,6 +28,10 @@ wss.on("connection", (ws) => {
     if (transcript) {
       console.log("🗣️ User:", transcript);
 
+      // 🔁 You can dynamically determine this per client later
+      const client = "dominos"; // Hardcoded for now
+      const systemPrompt = prompts[client] || "You are a helpful assistant.";
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -35,7 +40,10 @@ wss.on("connection", (ws) => {
         },
         body: JSON.stringify({
           model: "gpt-4",
-          messages: [{ role: "user", content: transcript }]
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: transcript }
+          ]
         })
       });
 
