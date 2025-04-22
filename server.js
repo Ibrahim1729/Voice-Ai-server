@@ -2,17 +2,26 @@ const WebSocket = require("ws");
 const { createClient } = require("@deepgram/sdk");
 const fetch = require("node-fetch");
 const fs = require("fs");
+const https = require("https");
+const path = require("path");
+const { Readable } = require("stream");
+const { exec } = require("child_process");
 require("dotenv").config();
 
-// Initialize Deepgram
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-
-// Load prompts, memory, and voice configurations
 const prompts = JSON.parse(fs.readFileSync("./prompts.json", "utf8"));
 const callerMemory = JSON.parse(fs.readFileSync("./callerMemory.json", "utf8"));
-const voices = JSON.parse(fs.readFileSync("./voices.json", "utf8"));
 
-// WebSocket server
+// Ensure voices.json exists and is correctly formatted
+let voices;
+try {
+  voices = JSON.parse(fs.readFileSync("./voices.json", "utf8"));
+  if (!voices.default) throw new Error("Missing default voice in voices.json");
+} catch (error) {
+  console.error("❌ voices.json is missing or malformed:", error.message);
+  process.exit(1);
+}
+
 const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
 
 wss.on("connection", (ws, req) => {
@@ -78,7 +87,37 @@ wss.on("connection", (ws, req) => {
     });
 
     const ttsData = await ttsRes.json();
-    console.log("🔊 TTS Audio URL:", ttsData.audioUrl);
+    const mp3Url = ttsData.audioUrl;
+    console.log("🔊 TTS Audio URL:", mp3Url);
+
+    // Download MP3 and convert to raw PCM (mulaw) for Twilio
+    const audioPath = path.join(__dirname, "temp.mp3");
+    const rawPath = path.join(__dirname, "temp.raw");
+
+    const file = fs.createWriteStream(audioPath);
+    https.get(mp3Url, (response) => {
+      response.pipe(file);
+      file.on("finish", () => {
+        file.close(() => {
+          const ffmpegCmd = `ffmpeg -y -i ${audioPath} -f mulaw -ar 8000 -ac 1 ${rawPath}`;
+          exec(ffmpegCmd, (err) => {
+            if (err) return console.error("FFmpeg error:", err);
+            const audioBuffer = fs.readFileSync(rawPath);
+
+            // Send audio back to Twilio in media message chunks
+            const chunkSize = 320;
+            for (let i = 0; i < audioBuffer.length; i += chunkSize) {
+              const chunk = audioBuffer.slice(i, i + chunkSize);
+              const base64Chunk = chunk.toString("base64");
+              ws.send(JSON.stringify({ event: "media", media: { payload: base64Chunk } }));
+            }
+
+            ws.send(JSON.stringify({ event: "mark", mark: { name: "done" } }));
+            console.log("✅ Audio streamed back to Twilio.");
+          });
+        });
+      });
+    });
   });
 
   ws.on("message", (msg) => dgStream.send(msg));
@@ -88,3 +127,4 @@ wss.on("connection", (ws, req) => {
     console.log("❌ WebSocket closed");
   });
 });
+
