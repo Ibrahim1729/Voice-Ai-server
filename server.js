@@ -4,7 +4,6 @@ const fetch = require("node-fetch");
 const fs = require("fs");
 const https = require("https");
 const path = require("path");
-const { Readable } = require("stream");
 const { exec } = require("child_process");
 require("dotenv").config();
 
@@ -12,6 +11,7 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const prompts = JSON.parse(fs.readFileSync("./prompts.json", "utf8"));
 const callerMemory = JSON.parse(fs.readFileSync("./callerMemory.json", "utf8"));
 
+// ✅ Check voices.json
 let voices;
 try {
   voices = JSON.parse(fs.readFileSync("./voices.json", "utf8"));
@@ -21,9 +21,9 @@ try {
   process.exit(1);
 }
 
-// ✅ FIX: Make server publicly accessible on Fly.io
+// ✅ FIX: Bind to 0.0.0.0 and port 8080 or env.PORT
 const wss = new WebSocket.Server({
-  port: process.env.PORT || 3000,
+  port: process.env.PORT || 8080,
   host: "0.0.0.0"
 });
 
