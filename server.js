@@ -1,3 +1,4 @@
+console.log("🔥 Booting app...");
 require("dotenv").config();
 console.log("🚀 App has started!");
 
