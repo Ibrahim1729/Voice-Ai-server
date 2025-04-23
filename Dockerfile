@@ -12,7 +12,7 @@ RUN npm install
 COPY . .
 
 # Expose the port your app uses
-EXPOSE 3000
+EXPOSE 8080
 
 # Start your WebSocket server
 CMD ["node", "server.js"]
