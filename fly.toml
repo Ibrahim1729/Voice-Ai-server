@@ -6,4 +6,11 @@ PORT = "8080"
 [[services]]
   protocol = "tcp"
   internal_port = 8080
-  ports = [{ port = 80 }, { port = 443 }]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
