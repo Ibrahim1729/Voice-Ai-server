@@ -27,6 +27,8 @@ const wss = new WebSocket.Server({
   host: "0.0.0.0"
 });
 
+console.log(`🟢 WebSocket server listening on ${process.env.PORT || 8080}`);
+
 wss.on("connection", (ws, req) => {
   console.log("🔗 Client connected");
 
