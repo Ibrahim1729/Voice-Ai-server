@@ -14,18 +14,20 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const prompts = JSON.parse(fs.readFileSync("./prompts.json", "utf8"));
 const callerMemory = JSON.parse(fs.readFileSync("./callerMemory.json", "utf8"));
 
+// ✅ Load voices.json safely
 let voices;
 try {
   voices = JSON.parse(fs.readFileSync("./voices.json", "utf8"));
   if (!voices.default) throw new Error("Missing default voice in voices.json");
-} catch (error) {
-  console.error("❌ voices.json is missing or malformed:", error.message);
+} catch (err) {
+  console.error("❌ voices.json missing or malformed:", err.message);
   process.exit(1);
 }
 
+// ✅ Start WebSocket server
 const wss = new WebSocket.Server({
   port: process.env.PORT || 8080,
-  host: "0.0.0.0",
+  host: "0.0.0.0"
 });
 console.log(`🟢 WebSocket server listening on ${process.env.PORT || 8080}`);
 
@@ -36,21 +38,17 @@ wss.on("connection", (ws, req) => {
   const dgStream = deepgram.listen.live({
     model: "nova",
     smart_format: true,
-    interim_results: false,
+    interim_results: false
   });
 
-  dgStream.on("open", () => console.log("🔊 Deepgram socket opened"));
+  dgStream.on("open", () => console.log("🔊 Deepgram stream opened"));
   dgStream.on("error", (err) => console.error("❌ Deepgram error:", err));
 
   dgStream.on("transcriptReceived", async (data) => {
-    console.log("📦 Raw Deepgram data:", JSON.stringify(data));
     const transcript = data.channel.alternatives[0].transcript;
-    if (!transcript) {
-      console.log("⚠️ No transcript received");
-      return;
-    }
+    if (!transcript) return;
+    console.log("🗣️ Caller said:", transcript);
 
-    console.log("🗣️ User said:", transcript);
     const memory = callerMemory[callerId] || [];
     memory.push(transcript);
 
@@ -58,55 +56,48 @@ wss.on("connection", (ws, req) => {
     const systemPrompt = promptConfig.system || "You are a helpful assistant.";
 
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
           model: "gpt-4",
           messages: [
             { role: "system", content: systemPrompt },
-            ...memory.map((m) => ({ role: "user", content: m })),
-          ],
-        }),
+            ...memory.map((m) => ({ role: "user", content: m }))
+          ]
+        })
       });
 
-      const result = await response.json();
-      const reply = result.choices?.[0]?.message?.content;
-      if (!reply) {
-        console.log("⚠️ GPT returned no message");
-        return;
-      }
-
+      const aiJson = await aiRes.json();
+      const reply = aiJson.choices?.[0]?.message?.content;
       console.log("🤖 GPT:", reply);
+
       callerMemory[callerId] = memory;
       fs.writeFileSync("./callerMemory.json", JSON.stringify(callerMemory, null, 2));
 
       const selectedVoice = promptConfig.voice || voices.default;
+
       const ttsRes = await fetch("https://api.play.ht/api/v2/tts", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.PLAYHT_API_KEY}`,
           "X-User-Id": process.env.PLAYHT_USER_ID,
-          "Content-Type": "application/json",
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
           voice: selectedVoice,
           output_format: "mp3",
-          text: reply,
-        }),
+          text: reply
+        })
       });
 
       const ttsData = await ttsRes.json();
       const mp3Url = ttsData.audioUrl;
-      if (!mp3Url) {
-        console.error("❌ No audio URL returned from PlayHT");
-        return;
-      }
+      console.log("🔊 TTS URL:", mp3Url);
 
-      console.log("🔊 TTS audio URL:", mp3Url);
       const audioPath = path.join(__dirname, "temp.mp3");
       const rawPath = path.join(__dirname, "temp.raw");
 
@@ -115,33 +106,42 @@ wss.on("connection", (ws, req) => {
         response.pipe(file);
         file.on("finish", () => {
           file.close(() => {
-            const ffmpegCmd = `ffmpeg -y -i ${audioPath} -f mulaw -ar 8000 -ac 1 ${rawPath}`;
-            exec(ffmpegCmd, (err) => {
-              if (err) return console.error("FFmpeg error:", err);
-              const audioBuffer = fs.readFileSync(rawPath);
-
+            const cmd = `ffmpeg -y -i ${audioPath} -f mulaw -ar 8000 -ac 1 ${rawPath}`;
+            exec(cmd, (err) => {
+              if (err) return console.error("❌ FFmpeg error:", err);
+              const buffer = fs.readFileSync(rawPath);
               const chunkSize = 320;
-              for (let i = 0; i < audioBuffer.length; i += chunkSize) {
-                const chunk = audioBuffer.slice(i, i + chunkSize);
-                const base64Chunk = chunk.toString("base64");
-                ws.send(JSON.stringify({ event: "media", media: { payload: base64Chunk } }));
+
+              for (let i = 0; i < buffer.length; i += chunkSize) {
+                const chunk = buffer.slice(i, i + chunkSize);
+                ws.send(JSON.stringify({
+                  event: "media",
+                  media: { payload: chunk.toString("base64") }
+                }));
               }
 
               ws.send(JSON.stringify({ event: "mark", mark: { name: "done" } }));
-              console.log("✅ Audio streamed back to Twilio.");
+              console.log("✅ Audio streamed back.");
             });
           });
         });
       });
-    } catch (err) {
-      console.error("❌ Error during GPT or TTS processing:", err.message);
+
+    } catch (e) {
+      console.error("🛑 GPT or TTS error:", e);
     }
   });
 
-  ws.on("message", (msg) => dgStream.send(msg));
+  ws.on("message", (msg) => {
+    try {
+      dgStream.send(msg);
+    } catch (err) {
+      console.error("📡 Message error:", err.message);
+    }
+  });
+
   ws.on("close", () => {
-    dgStream.finish();
     console.log("❌ WebSocket closed");
+    dgStream.finish();
   });
 });
-
