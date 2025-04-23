@@ -22,7 +22,7 @@ try {
   process.exit(1);
 }
 
-const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
+const wss = new WebSocket.Server({ port: process.env.PORT || 3000 });
 
 wss.on("connection", (ws, req) => {
   console.log("🔗 Client connected");
