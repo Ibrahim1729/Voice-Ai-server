@@ -12,7 +12,6 @@ const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 const prompts = JSON.parse(fs.readFileSync("./prompts.json", "utf8"));
 const callerMemory = JSON.parse(fs.readFileSync("./callerMemory.json", "utf8"));
 
-// Ensure voices.json exists and is correctly formatted
 let voices;
 try {
   voices = JSON.parse(fs.readFileSync("./voices.json", "utf8"));
@@ -22,10 +21,15 @@ try {
   process.exit(1);
 }
 
-const wss = new WebSocket.Server({ port: process.env.PORT || 3000 });
+// ✅ FIX: Make server publicly accessible on Fly.io
+const wss = new WebSocket.Server({
+  port: process.env.PORT || 3000,
+  host: "0.0.0.0"
+});
 
 wss.on("connection", (ws, req) => {
   console.log("🔗 Client connected");
+
   const callerId = req.headers["x-caller-id"] || `caller_${Date.now()}`;
 
   const dgStream = deepgram.listen.live({
@@ -90,7 +94,6 @@ wss.on("connection", (ws, req) => {
     const mp3Url = ttsData.audioUrl;
     console.log("🔊 TTS Audio URL:", mp3Url);
 
-    // Download MP3 and convert to raw PCM (mulaw) for Twilio
     const audioPath = path.join(__dirname, "temp.mp3");
     const rawPath = path.join(__dirname, "temp.raw");
 
@@ -104,7 +107,6 @@ wss.on("connection", (ws, req) => {
             if (err) return console.error("FFmpeg error:", err);
             const audioBuffer = fs.readFileSync(rawPath);
 
-            // Send audio back to Twilio in media message chunks
             const chunkSize = 320;
             for (let i = 0; i < audioBuffer.length; i += chunkSize) {
               const chunk = audioBuffer.slice(i, i + chunkSize);
@@ -121,10 +123,8 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("message", (msg) => dgStream.send(msg));
-
   ws.on("close", () => {
     dgStream.finish();
     console.log("❌ WebSocket closed");
   });
 });
-
